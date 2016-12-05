@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Scrape links from URL, select and download')
     parser.add_argument('url', type=str, nargs=1, help='url of site to scrape')
-    parser.add_argument('dest', type=str, nargs=/1, help='desination directory of the downloaded files')
+    parser.add_argument('dest', type=str, nargs=1, help='desination directory of the downloaded files')
 
     args = parser.parse_args()
 
