@@ -159,7 +159,7 @@ if __name__ == "__main__":
     for index in links:
         formatted_index = str(index) + ")"
         formatted_index = formatted_index.ljust(3, " ")
-        print "%s %s | %s" % (formatted_index, links[index].filename.ljust(name_length, " "), links[index].title)
+        print "%s %s" % (formatted_index, links[index].filename.ljust(name_length, " "))
 
     print ""
     print "Enter comma separated sequence of ids or ranges that need to be downloaded. eg 1,4,7-18"
@@ -178,7 +178,6 @@ if __name__ == "__main__":
     if not len(download_list):
         error("Nothing to do ..")
         exit(-1)
-
 
     try:
         print "Download %i files" % len(download_list)
