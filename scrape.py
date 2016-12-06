@@ -20,17 +20,14 @@ lxml        | pip2 install lxml
 import argparse
 import requests
 import urllib
-import sys, time
+import sys, os
 from tqdm import tqdm
 from lxml import html
-import threading
-from Queue import Queue
-
 
 OUTPUTTING = False
 
 def error(message):
-    sys.stderr.write("[!] %s" % message)
+    sys.stderr.write("[!] %s\n" % message)
 
 class Link:
         filename = None
@@ -42,37 +39,10 @@ class Link:
             self.url = url
             self.title = title.encode("ascii", "ignore")
 
-
-class DownloadThread(threading.Thread):
-    def __init__(self, queue, destfolder, position, name_length):
-        super(DownloadThread, self).__init__()
-        self.queue = queue
-        self.destfolder = destfolder
-        self.daemon = True
-        self.position = position
-        self.name_length = name_length
-
-    def run(self):
-        while True:
-            link = self.queue.get()
-            try:
-                self.download_link(link)
-            except Exception,e:
-                print "   Error: %s"%e
-            self.queue.task_done()
-
-    def download_link(self, link):
-        label = "%s" % link.filename.ljust(self.name_length, " ")
-        filename = self.destfolder + "/" + link.filename
-
-        with tqdm(unit='B', unit_scale=True, mininterval=2, bar_format="{l_bar}{r_bar}", position=self.position, desc=label, dynamic_ncols=False) as t:  # all optional kwargs
-            urllib.urlretrieve(link.url, filename=filename, reporthook=self.update_hook(t), data=None)
-
-    def update_hook(self, t):
+def update_hook(t):
         last_b = [0]
 
         def inner(b=1, bsize=1, tsize=None):
-            global OUTPUTTING
             """
             b  : int, optional
                 Number of blocks just transferred [default: 1].
@@ -81,13 +51,11 @@ class DownloadThread(threading.Thread):
             tsize  : int, optional
                 Total size (in tqdm units). If [default: None] remains unchanged.
             """
-            if not OUTPUTTING:
-                OUTPUTTING = True
-                if tsize is not None:
-                    t.total = tsize
-                t.update((b - last_b[0]) * bsize)
-                last_b[0] = b
-                OUTPUTTING = False
+
+            if tsize is not None:
+                t.total = tsize
+            t.update((b - last_b[0]) * bsize)
+            last_b[0] = b
         return inner
 
 
@@ -140,11 +108,10 @@ def assemble_link_list(root):
     for element in elements:
         if element.xpath("./@href") and element.xpath("./text()"):
             filename = element.xpath("./@href")[0]
-            if 
-
-            links[i] = Link(element.xpath("./@href")[0], element.xpath("./text()")[0],
-                                "%s%s" % (root, element.xpath("./@href")[0]))
-            i += 1
+            if not "/" in filename and not "\0" in filename:
+                links[i] = Link(element.xpath("./@href")[0], element.xpath("./text()")[0],
+                                    "%s%s" % (root, element.xpath("./@href")[0]))
+                i += 1
 
     return links
 
@@ -164,7 +131,8 @@ def get_max_file_name_len(download_list):
 
 if __name__ == "__main__":
     TITLE_COL_WIDTH = 100
-
+    THREAD_COUNT    = 5
+    POSITION        = -1
 
     parser = argparse.ArgumentParser(description='Scrape links from URL, select and download')
     parser.add_argument('url', type=str, nargs=1, help='url of site to scrape')
@@ -173,7 +141,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     url = args.url[0]
-    dest = args.dest[0]
+    dest = args.dest[0].rstrip("/")
 
     # Url reparation
     if not url[-1:] == "/":
@@ -183,11 +151,15 @@ if __name__ == "__main__":
     links  = assemble_link_list(url)
     name_length = get_max_file_name_len(links)
 
+    if len(links) == 0:
+        error("This URL contains no files that can be downloaded with this script")
+        exit(-1)
+
     # Display the files
     for index in links:
         formatted_index = str(index) + ")"
         formatted_index = formatted_index.ljust(3, " ")
-        print "%s %s | %s" % (formatted_index, links[index].filename.ljust(name_length, " ")[0:50], links[index].title[0:50])
+        print "%s %s | %s" % (formatted_index, links[index].filename.ljust(name_length, " "), links[index].title)
 
     print ""
     print "Enter comma separated sequence of ids or ranges that need to be downloaded. eg 1,4,7-18"
@@ -197,21 +169,27 @@ if __name__ == "__main__":
     download_list = input & links.viewkeys()
     name_length = get_max_file_name_len(download_list)
 
-    queue = Queue()
-    for item in download_list:
-        queue.put(links[item])
+    for item in [x for x in download_list]:
+        filename = dest + "/" + links[item].filename
+        if os.path.isfile(filename):
+            error("%s already exists" % filename)
+            download_list.remove(item)
 
-    for i in range(5):
-        time.sleep(0.5) # Add each thread with a slight delay. If this is omitted, the output is messed up.
-        t = DownloadThread(queue, dest, i, name_length)
-        t.start()
+    if not len(download_list):
+        error("Nothing to do ..")
+        exit(-1)
 
-    # Normally you would use queue.join(), but as this is blocking sigints, this workaround is used
+
     try:
-        while True:
-            if not queue.empty():
-                time.sleep(1)
-                continue
+        print "Download %i files" % len(download_list)
+
+        for item in download_list:
+            link = links[item]
+            label = "%s" % link.filename.ljust(name_length, " ")
+            filename = dest + "/" + link.filename
+
+            with tqdm(unit='B', ncols=0, unit_scale=True, mininterval=2, desc=label) as t:
+                urllib.urlretrieve(link.url, filename=filename, reporthook=update_hook(t), data=None)
     except KeyboardInterrupt:
         error("Aborted")
         exit(-1)
