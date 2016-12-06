@@ -20,11 +20,14 @@ lxml        | pip2 install lxml
 import argparse
 import requests
 import urllib
-import sys, signal, time
+import sys, time
 from tqdm import tqdm
 from lxml import html
 import threading
 from Queue import Queue
+
+
+OUTPUTTING = False
 
 def error(message):
     sys.stderr.write("[!] %s" % message)
@@ -59,33 +62,41 @@ class DownloadThread(threading.Thread):
             self.queue.task_done()
 
     def download_link(self, link):
-        label = link.filename.ljust(self.name_length)
+        label = "%s" % link.filename.ljust(self.name_length, " ")
         filename = self.destfolder + "/" + link.filename
 
-        with tqdm(unit='B', unit_scale=True, miniters=1, position=self.position, desc=label, dynamic_ncols=True) as t:  # all optional kwargs
+        with tqdm(unit='B', unit_scale=True, mininterval=2, bar_format="{l_bar}{r_bar}", position=self.position, desc=label, dynamic_ncols=False) as t:  # all optional kwargs
             urllib.urlretrieve(link.url, filename=filename, reporthook=self.update_hook(t), data=None)
 
     def update_hook(self, t):
+        last_b = [0]
 
-      last_b = [0]
-
-      def inner(b=1, bsize=1, tsize=None):
-        """
-        b  : int, optional
-            Number of blocks just transferred [default: 1].
-        bsize  : int, optional
-            Size of each block (in tqdm units) [default: 1].
-        tsize  : int, optional
-            Total size (in tqdm units). If [default: None] remains unchanged.
-        """
-        if tsize is not None:
-            t.total = tsize
-        t.update((b - last_b[0]) * bsize)
-        last_b[0] = b
-      return inner
+        def inner(b=1, bsize=1, tsize=None):
+            global OUTPUTTING
+            """
+            b  : int, optional
+                Number of blocks just transferred [default: 1].
+            bsize  : int, optional
+                Size of each block (in tqdm units) [default: 1].
+            tsize  : int, optional
+                Total size (in tqdm units). If [default: None] remains unchanged.
+            """
+            if not OUTPUTTING:
+                OUTPUTTING = True
+                if tsize is not None:
+                    t.total = tsize
+                t.update((b - last_b[0]) * bsize)
+                last_b[0] = b
+                OUTPUTTING = False
+        return inner
 
 
 def handle_user_input():
+    '''
+    Requests usr input on which files to download.
+    Accepts: \d,\d-\d
+    :return: list of indices
+    '''
     sanitized_input = []
     response = raw_input("> ")
     if response == "q":
@@ -116,28 +127,39 @@ def handle_user_input():
 
 
 def assemble_link_list():
+    '''
+    Put a tag info in more usable Link objects
+    :return: dict index => Link
+    '''
     tree = html.fromstring(result)
     elements = tree.xpath("//a")
     links = dict()
-    start = 0
+    i = 0
     # Process each a-tag in the element list
     for element in elements:
-        links[start] = Link(element.xpath("./@href")[0], element.xpath("./text()")[0],
+        links[i] = Link(element.xpath("./@href")[0], element.xpath("./text()")[0],
                             "%s%s" % (url, element.xpath("./@href")[0]))
-        start += 1
+        i += 1
 
     return links
 
 def get_max_file_name_len(download_list):
+    '''
+    Determines the longest filename to be used in properly formatting output
+
+    :param download_list: integer index dict specifying links
+    :return: int
+    '''
     name_length = 0
     for key in download_list:
-        if links[key].filename >= name_length:
+        if len(links[key].filename) > name_length:
             name_length = len(links[key].filename)
 
     return name_length
 
 if __name__ == "__main__":
     TITLE_COL_WIDTH = 100
+
 
     parser = argparse.ArgumentParser(description='Scrape links from URL, select and download')
     parser.add_argument('url', type=str, nargs=1, help='url of site to scrape')
@@ -171,13 +193,12 @@ if __name__ == "__main__":
     for item in download_list:
         queue.put(links[item])
 
-    position = 0
-
     for i in range(5):
-        t = DownloadThread(queue, dest, position, name_length)
+        time.sleep(0.5) # Add each thread with a slight delay. If this is omitted, the output is messed up.
+        t = DownloadThread(queue, dest, i, name_length)
         t.start()
-        position +=1
 
+    # Normally you would use queue.join(), but as this is blocking sigints, this workaround is used
     try:
         while True:
             if not queue.empty():
