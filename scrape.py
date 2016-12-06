@@ -134,7 +134,7 @@ if __name__ == "__main__":
     THREAD_COUNT    = 5
     POSITION        = -1
 
-    parser = argparse.ArgumentParser(description='Scrape links from URL, select and download')
+    parser = argparse.ArgumentParser(description='Scrapes links to files from URL. Allows a user to select and download them sequentially')
     parser.add_argument('url', type=str, nargs=1, help='url of site to scrape')
     parser.add_argument('dest', type=str, nargs=1, help='desination directory of the downloaded files')
 
