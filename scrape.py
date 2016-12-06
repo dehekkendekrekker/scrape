@@ -40,7 +40,7 @@ class Link:
         def __init__(self, filename, title, url):
             self.filename = urllib.unquote(filename)
             self.url = url
-            self.title = title
+            self.title = title.encode("ascii", "ignore")
 
 
 class DownloadThread(threading.Thread):
@@ -126,20 +126,25 @@ def handle_user_input():
     return sanitized_input
 
 
-def assemble_link_list():
+def assemble_link_list(root):
     '''
     Put a tag info in more usable Link objects
     :return: dict index => Link
     '''
     tree = html.fromstring(result)
     elements = tree.xpath("//a")
+
     links = dict()
     i = 0
     # Process each a-tag in the element list
     for element in elements:
-        links[i] = Link(element.xpath("./@href")[0], element.xpath("./text()")[0],
-                            "%s%s" % (url, element.xpath("./@href")[0]))
-        i += 1
+        if element.xpath("./@href") and element.xpath("./text()"):
+            filename = element.xpath("./@href")[0]
+            if 
+
+            links[i] = Link(element.xpath("./@href")[0], element.xpath("./text()")[0],
+                                "%s%s" % (root, element.xpath("./@href")[0]))
+            i += 1
 
     return links
 
@@ -175,11 +180,14 @@ if __name__ == "__main__":
         url = url + "/"
 
     result = requests.get(url).content
-    links  = assemble_link_list()
+    links  = assemble_link_list(url)
+    name_length = get_max_file_name_len(links)
 
     # Display the files
     for index in links:
-        print "%s) %s" % (index, links[index].title.ljust(TITLE_COL_WIDTH))
+        formatted_index = str(index) + ")"
+        formatted_index = formatted_index.ljust(3, " ")
+        print "%s %s | %s" % (formatted_index, links[index].filename.ljust(name_length, " ")[0:50], links[index].title[0:50])
 
     print ""
     print "Enter comma separated sequence of ids or ranges that need to be downloaded. eg 1,4,7-18"
